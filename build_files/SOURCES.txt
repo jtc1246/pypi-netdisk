@@ -1,0 +1,8 @@
+setup.py
+$3/__init__.py
+$3/main.py
+$3/main_func_linux_x86.so
+$3.egg-info/PKG-INFO
+$3.egg-info/SOURCES.txt
+$3.egg-info/dependency_links.txt
+$3.egg-info/top_level.txt

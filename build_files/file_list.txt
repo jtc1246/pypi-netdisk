@@ -1,0 +1,22 @@
+tree .
+.
+├── PKG-INFO
+├── ibhqoegvuegbiqy
+│   ├── __init__.py
+│   ├── main.py
+│   └── main_func_linux_x86.so
+├── ibhqoegvuegbiqy.egg-info
+│   ├── PKG-INFO
+│   ├── SOURCES.txt
+│   ├── dependency_links.txt
+│   └── top_level.txt
+├── setup.cfg
+└── setup.py
+
+2 directories, 10 files
+
+
+ibhqoegvuegbiqy 下和自己的一样
+PKG-INFO 和 .egg-info/PKG-INFO 一样
+setup.py 和自己的一样
+需要注意 dependency_links.txt 虽然是空白的，但是有一个换行符
