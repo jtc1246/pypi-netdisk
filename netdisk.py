@@ -263,10 +263,10 @@ class PypiNetdisk:
     def file_info(self, path: str) -> list:
         # 目前只有大小
         return [self.size(path)]
-    
+
     def dir_info(self, path: str) -> list:
         # 目前有一些问题，前面的线程锁释放了之后，有可能被其它线程抢占
-        return [self.size(path),self.file_num(path),self.file_dir_num(path)]
+        return [self.size(path), self.file_num(path), self.file_dir_num(path)]
 
     def file_num(self, path: str) -> int:
         self.__require_unlocked()
@@ -459,6 +459,26 @@ class PypiNetdisk:
         /a/b/c/d/e -> /g/h/i/j
         要求 /a/b/c/d/e 存在, /g/h/i 存在且为文件夹, /g/h/i/j 不存在
         '''
+        pass
+
+    def upload_from_disk_to(self, local_path: str, netdisk_path: str):
+        # 不会提供 upload_from_disk_as 函数
+        pass
+
+    def upload_bytes(self, data: bytes, path: str):
+        pass
+
+    def upload_tar_bytes(self, tar: bytes, path: str):
+        pass
+
+    def download_to_disk_to(self, netdisk_path: str, local_path: str):
+        # 不会提供 download_to_disk_as 函数
+        pass
+
+    def get_bytes(self, path: str) -> bytes:
+        pass
+
+    def download_tar_bytes(self, path: str) -> bytes:
         pass
 
     @property
