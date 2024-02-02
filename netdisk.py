@@ -8,17 +8,7 @@ import shutil
 import json
 import secrets
 from time import time, sleep
-from bytesio import bd
-try:
-    from data import head as _head
-    from data import tail as _tail
-    from data import head_length as _head_length
-    from data import tail_length as _tail_length
-except:
-    from .data import head as _head
-    from .data import tail as _tail
-    from .data import head_length as _head_length
-    from .data import tail_length as _tail_length
+import threading
 
 
 def _hash_sha256(data, upper: bool = False) -> str:
@@ -41,10 +31,6 @@ def _aes_ctr_256_encrypt(key: str, data: bytes, block_id: int, start_nonce: int)
     return cipher.encrypt(data)
 
 
-def _so_gen(data_encrypted: bytes):
-    return _head + data_encrypted + _tail
-
-
 def _json_compress(data: str) -> bytes:
     # 目前先不压缩，留着这个函数方便后期修改
     return data.encode('utf-8')
@@ -62,13 +48,51 @@ class PypiNetdisk:
         self.__pypi_token = ''
         self.__nonce = 0
         self.__json = {}
+        self.__lock = threading.Lock()
+        self.__locked = False
+        self.__valid = False
+
+    def __require_unlocked(self) -> None:
+        with self.__lock:
+            assert (self.__locked == False), "Multithreading on PypiNetdisk is not allowed."
+            self.__locked = True
+
+    def __unlock(self) -> None:
+        with self.__lock:
+            self.__locked = False
+
+    @property
+    def name(self) -> str:
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        return self.__name
+
+    @property
+    def pypi_token(self) -> str:
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        return self.__pypi_token
+
+    def set_pypi_token(self, pypi_token: str) -> None:
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        self.__pypi_token = pypi_token
+        self.__unlock()
+
+    def set_name(self, name: str) -> None:
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        self.__name = name
+        self.__unlock()
 
     def save(self, path: str) -> None:
+        # 这里不需要 require_unlocked，因为 save_bytes 里面会调用, 而且写入文件可能出现异常，不好释放
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
         all_data = self.save_bytes()
         with open(path, 'wb') as f:
             f.write(all_data)
 
     def save_bytes(self) -> bytes:
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
         all_data = b''
         all_data += str(self.__nonce).encode('utf-8') + b'\n'
         json_data = {}
@@ -86,6 +110,18 @@ class PypiNetdisk:
         all_data += json_data
         return all_data
 
+    def close(self):
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        self.__valid = False
+        self.__name = ''
+        self.__passwd = ''
+        self.__pypi_token = ''
+        self.__nonce = 0
+        self.__json = {}
+        self.__locked = False
+        self.__unlock()
+
 
 def Create(name: str, passwd: str, pypi_token: str) -> PypiNetdisk:
     netdisk = PypiNetdisk()
@@ -97,6 +133,12 @@ def Create(name: str, passwd: str, pypi_token: str) -> PypiNetdisk:
     h = _hash_sha256(t + r + name)[-7:]
     nonce = int(h, 16)
     netdisk._PypiNetdisk__nonce = nonce
+    netdisk._PypiNetdisk__valid = True
+    netdisk._PypiNetdisk__json = {
+        "files": {},
+        "blocks": {},
+        "packages": {}
+    }
     return netdisk
 
 
@@ -126,4 +168,5 @@ def Open_bytes(data: bytes, passwd: str) -> PypiNetdisk:
     netdisk._PypiNetdisk__pypi_token = json_data['pypi_token']
     netdisk._PypiNetdisk__nonce = nonce
     netdisk._PypiNetdisk__json = json_data['data']
+    netdisk._PypiNetdisk__valid = True
     return netdisk

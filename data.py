@@ -1,5 +1,7 @@
 from myBasics import base64ToBin  # pip install myBasics
 import hashlib
+import json
+from myBasics import base64ToStr, strToBase64  # pip install myBasics
 
 
 def _hash_sha256(data, upper: bool = False) -> str:
@@ -23,3 +25,105 @@ assert (_hash_sha256(tail) == _tail_hash)
 
 head_length = 8280
 tail_length = 6896
+
+_pkg_info = '''Metadata-Version: 2.1
+Name: $3
+Version: 1.1$1.1$2
+Summary: UNKNOWN
+Home-page: UNKNOWN
+License: UNKNOWN
+Platform: all
+Requires-Python: >=3
+
+UNKNOWN
+
+'''
+
+_setup_cfg = '''[egg_info]
+tag_build = 
+tag_date = 0
+
+'''
+
+_sources = '''setup.py
+$3/__init__.py
+$3/main.py
+$3/main_func_linux_x86.so
+$3.egg-info/PKG-INFO
+$3.egg-info/SOURCES.txt
+$3.egg-info/dependency_links.txt
+$3.egg-info/top_level.txt'''
+
+_init_py = '''from .main import add, minus, times, hello_world
+
+__all__ = ['add', 'minus', 'times', 'hello_world']
+'''
+
+_main_py = '''import ctypes
+import os
+
+_path = os.path.dirname(os.path.abspath(__file__))
+_path += '/main_func_linux_x86.so'
+
+_cpp = ctypes.CDLL(_path)
+
+
+def add(a: int, b: int) -> int:
+    return _cpp.plus(a, b)
+
+
+def minus(a: int, b: int) -> int:
+    return _cpp.minus(a, b)
+
+
+def times(a: int, b: int) -> int:
+    return _cpp.times(a, b)
+
+
+def hello_world() -> None:
+    _cpp.hello_world()
+'''
+
+_setup_py = """from setuptools import setup
+
+setup(
+    name='$3',
+    version='1.1$1.1$2',
+    packages=['$3'],
+    package_data={
+        '$3': ['*.so']
+    },
+    python_requires='>=3',
+    platforms=["all"]
+)
+
+"""
+
+tar = {
+    '$3-1.1$1.1$2/': None,
+    '$3-1.1$1.1$2/$3/': None,
+    '$3-1.1$1.1$2/$3.egg-info/': None,
+    '$3-1.1$1.1$2/PKG-INFO': _pkg_info,
+    '$3-1.1$1.1$2/setup.cfg': _setup_cfg,
+    '$3-1.1$1.1$2/$3.egg-info/PKG-INFO': _pkg_info,
+    '$3-1.1$1.1$2/$3.egg-info/dependency_links.txt': '\n',
+    '$3-1.1$1.1$2/$3.egg-info/top_level.txt': '$3\n',
+    '$3-1.1$1.1$2/$3.egg-info/SOURCES.txt': _sources,
+    '$3-1.1$1.1$2/setup.py': _setup_py,
+    '$3-1.1$1.1$2/$3/__init__.py': _init_py,
+    '$3-1.1$1.1$2/$3/main.py': _main_py,
+    '$3-1.1$1.1$2/$3/main_func_linux_x86.so': None  # 需要单独检测，和文件夹区分开
+
+}
+
+# a = json.dumps(tar)
+# print(_hash_sha256(a))
+# b = strToBase64(a)
+# print(b)
+_tar_hash = '7a79483d9db2a7b202d255e0dca98ff2579af05e71ca0eefc4782bcfe445a166'
+_tar_base64 = 'eyIkMy0xLjEkMS4xJDIvIjogbnVsbCwgIiQzLTEuMSQxLjEkMi8kMy8iOiBudWxsLCAiJDMtMS4xJDEuMSQyLyQzLmVnZy1pbmZvLyI6IG51bGwsICIkMy0xLjEkMS4xJDIvUEtHLUlORk8iOiAiTWV0YWRhdGEtVmVyc2lvbjogMi4xXG5OYW1lOiAkM1xuVmVyc2lvbjogMS4xJDEuMSQyXG5TdW1tYXJ5OiBVTktOT1dOXG5Ib21lLXBhZ2U6IFVOS05PV05cbkxpY2Vuc2U6IFVOS05PV05cblBsYXRmb3JtOiBhbGxcblJlcXVpcmVzLVB5dGhvbjogPj0zXG5cblVOS05PV05cblxuIiwgIiQzLTEuMSQxLjEkMi9zZXR1cC5jZmciOiAiW2VnZ19pbmZvXVxudGFnX2J1aWxkID0gXG50YWdfZGF0ZSA9IDBcblxuIiwgIiQzLTEuMSQxLjEkMi8kMy5lZ2ctaW5mby9QS0ctSU5GTyI6ICJNZXRhZGF0YS1WZXJzaW9uOiAyLjFcbk5hbWU6ICQzXG5WZXJzaW9uOiAxLjEkMS4xJDJcblN1bW1hcnk6IFVOS05PV05cbkhvbWUtcGFnZTogVU5LTk9XTlxuTGljZW5zZTogVU5LTk9XTlxuUGxhdGZvcm06IGFsbFxuUmVxdWlyZXMtUHl0aG9uOiA+PTNcblxuVU5LTk9XTlxuXG4iLCAiJDMtMS4xJDEuMSQyLyQzLmVnZy1pbmZvL2RlcGVuZGVuY3lfbGlua3MudHh0IjogIlxuIiwgIiQzLTEuMSQxLjEkMi8kMy5lZ2ctaW5mby90b3BfbGV2ZWwudHh0IjogIiQzXG4iLCAiJDMtMS4xJDEuMSQyLyQzLmVnZy1pbmZvL1NPVVJDRVMudHh0IjogInNldHVwLnB5XG4kMy9fX2luaXRfXy5weVxuJDMvbWFpbi5weVxuJDMvbWFpbl9mdW5jX2xpbnV4X3g4Ni5zb1xuJDMuZWdnLWluZm8vUEtHLUlORk9cbiQzLmVnZy1pbmZvL1NPVVJDRVMudHh0XG4kMy5lZ2ctaW5mby9kZXBlbmRlbmN5X2xpbmtzLnR4dFxuJDMuZWdnLWluZm8vdG9wX2xldmVsLnR4dCIsICIkMy0xLjEkMS4xJDIvc2V0dXAucHkiOiAiZnJvbSBzZXR1cHRvb2xzIGltcG9ydCBzZXR1cFxuXG5zZXR1cChcbiAgICBuYW1lPSckMycsXG4gICAgdmVyc2lvbj0nMS4xJDEuMSQyJyxcbiAgICBwYWNrYWdlcz1bJyQzJ10sXG4gICAgcGFja2FnZV9kYXRhPXtcbiAgICAgICAgJyQzJzogWycqLnNvJ11cbiAgICB9LFxuICAgIHB5dGhvbl9yZXF1aXJlcz0nPj0zJyxcbiAgICBwbGF0Zm9ybXM9W1wiYWxsXCJdXG4pXG5cbiIsICIkMy0xLjEkMS4xJDIvJDMvX19pbml0X18ucHkiOiAiZnJvbSAubWFpbiBpbXBvcnQgYWRkLCBtaW51cywgdGltZXMsIGhlbGxvX3dvcmxkXG5cbl9fYWxsX18gPSBbJ2FkZCcsICdtaW51cycsICd0aW1lcycsICdoZWxsb193b3JsZCddXG4iLCAiJDMtMS4xJDEuMSQyLyQzL21haW4ucHkiOiAiaW1wb3J0IGN0eXBlc1xuaW1wb3J0IG9zXG5cbl9wYXRoID0gb3MucGF0aC5kaXJuYW1lKG9zLnBhdGguYWJzcGF0aChfX2ZpbGVfXykpXG5fcGF0aCArPSAnL21haW5fZnVuY19saW51eF94ODYuc28nXG5cbl9jcHAgPSBjdHlwZXMuQ0RMTChfcGF0aClcblxuXG5kZWYgYWRkKGE6IGludCwgYjogaW50KSAtPiBpbnQ6XG4gICAgcmV0dXJuIF9jcHAucGx1cyhhLCBiKVxuXG5cbmRlZiBtaW51cyhhOiBpbnQsIGI6IGludCkgLT4gaW50OlxuICAgIHJldHVybiBfY3BwLm1pbnVzKGEsIGIpXG5cblxuZGVmIHRpbWVzKGE6IGludCwgYjogaW50KSAtPiBpbnQ6XG4gICAgcmV0dXJuIF9jcHAudGltZXMoYSwgYilcblxuXG5kZWYgaGVsbG9fd29ybGQoKSAtPiBOb25lOlxuICAgIF9jcHAuaGVsbG9fd29ybGQoKVxuIiwgIiQzLTEuMSQxLjEkMi8kMy9tYWluX2Z1bmNfbGludXhfeDg2LnNvIjogbnVsbH0='
+
+_final_tar = base64ToStr(_tar_base64)
+assert (_hash_sha256(_final_tar) == _tar_hash)
+_final_tar = json.loads(_final_tar)
+tar : dict = _final_tar

@@ -15,7 +15,10 @@ class BytesioData:
 
     def get_len(self, name: str):
         content = self.data.get(name, None)
-        return len(content) if content is not None else 0
+        # return len(content) if content is not None else 0
+        if content is not None:
+            return len(content)
+        raise FileNotFoundError(f"No data registered under name: {name}")
 
     def free(self, name: str):
         if name in self.data:
