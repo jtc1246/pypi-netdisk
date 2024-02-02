@@ -16,12 +16,14 @@ try:
     from data import head_length as _head_length
     from data import tail_length as _tail_length
     from data import tar as _tar_file_list
+    from data import _hash_sha256
 except:
     from .data import head as _head
     from .data import tail as _tail
     from .data import head_length as _head_length
     from .data import tail_length as _tail_length
     from .data import tar as _tar_file_list
+    from .data import _hash_sha256
 
 
 def _to_4_digits(num: int) -> str:
@@ -105,8 +107,9 @@ def upload_tar_gz(name: str, data: bytes, pypi_token: str):
     return 0
 
 
-if __name__ == "__main__":
-    for i in range(95, 120):
-        n, d = gen_tar_gz('ijbqivgbeugyvbub', secrets.token_bytes(95000000), i)
-        s = upload_tar_gz(n, d, 'pypi-AgEIcHlwaS5vcmcCJDkzOWE3ZDFiLWZjNTAtNDFkMC1hMDJhLTU2ODI3NzZkMDIwMgACKlszLCI1NzM1YzEwNi04M2I5LTRhMGMtYTk2OS04MWQ1MDMzNjJiMmEiXQAABiC3f83OHTvuWSIiEaQLbBOD3SvrnAQL8gLwwIzvMM_UHw')
-        print(f'{i}: {s}')
+# if __name__ == "__main__":
+#     for i in range(0, 1):
+#         n, d = gen_tar_gz('qegueqrgobufqjke', secrets.token_bytes(95000000), i)
+#         print(_hash_sha256(d))
+#         s = upload_tar_gz(n, d, '')
+#         print(f'{i}: {s}')

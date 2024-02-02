@@ -1,3 +1,4 @@
+from typing import List
 import subprocess
 from hashlib import sha256
 import hashlib
@@ -9,6 +10,13 @@ import json
 import secrets
 from time import time, sleep
 import threading
+try:
+    from file_name_operations import remove_continuous_slashes, name_legal, resolve_path, path_elements
+except:
+    from .file_name_operations import remove_continuous_slashes, name_legal, resolve_path, path_elements
+
+_STR_TYPE = type('')
+_DICT_TYPE = type({})
 
 
 def _hash_sha256(data, upper: bool = False) -> str:
@@ -41,6 +49,35 @@ def _json_decompress(data: bytes) -> str:
     return data.decode('utf-8')
 
 
+def _size(json_data) -> int:
+    if (type(json_data) == _STR_TYPE):
+        file_info = str(json_data).split(',')
+        return (int(file_info[1]) - int(file_info[0]))
+    s = 0
+    for k, v in json_data.items():
+        s += _size(v)
+    return s
+
+
+def _file_num(json_data) -> int:
+    if (type(json_data) == _STR_TYPE):
+        return 1
+    s = 0
+    for k, v in json_data.items():
+        s += _file_num(v)
+    return s
+
+
+def _file_dir_num(self, json_data) -> int:
+    # 包括自己
+    if (type(json_data) == _STR_TYPE):
+        return 1
+    s = 1
+    for k, v in json_data.items():
+        s += _file_dir_num(v)
+    return s
+
+
 class PypiNetdisk:
     def __init__(self):
         self.__name = ''
@@ -60,6 +97,369 @@ class PypiNetdisk:
     def __unlock(self) -> None:
         with self.__lock:
             self.__locked = False
+
+    def _force_quit(self):
+        '''
+        仅在出现异常但未正常释放的时候使用，请勿为了多线程运行使用
+        '''
+        with self.__lock:
+            self.__locked = False
+
+    def exists(self, path: str) -> bool:
+        '''
+        任何情况均不报错（本身线程锁和 closed 不考虑）
+        '''
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                return False
+            if (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                return False
+            current_dir = current_dir[p]
+        result = (path[-1] in current_dir)
+        self.__unlock()
+        return result
+
+    def is_file(self, path: str) -> bool:
+        '''
+        任何情况均不报错（本身线程锁和 closed 不考虑）
+        '''
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                return False
+            if (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                return False
+            current_dir = current_dir[p]
+        result = (path[-1] in current_dir and type(current_dir[path[-1]]) == _STR_TYPE)
+        self.__unlock()
+        return result
+
+    def is_dir(self, path: str) -> bool:
+        '''
+        任何情况均不报错（本身线程锁和 closed 不考虑）
+        '''
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                return False
+            if (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                return False
+            current_dir = current_dir[p]
+        result = (path[-1] in current_dir and type(current_dir[path[-1]]) == _DICT_TYPE)
+        self.__unlock()
+        return result
+
+    def mkdir_all(self, path: str) -> None:
+        '''
+        如果中间一个没有，会一路创建下去
+        '''
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        path_str = resolve_path(path)
+        try:
+            for p in path:
+                assert (len(p) < 256)
+        except:
+            self.__unlock()
+            assert (False), f'Dir name is not legal.'
+        if (path_str == '/'):
+            self.__unlock()
+            assert (False), f'Path "{path_str}" already exists.'
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path[:-1]:
+            if (p not in current_dir):
+                current_dir[p] = {}
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+            current_dir_str += p + '/'
+        if (path[-1] in current_dir):
+            self.__unlock()
+            assert (False), f'Path "{path_str}" already exists.'
+        current_dir[path[-1]] = {}
+        self.__unlock()
+
+    def mkdir(self, base_path: str, name: str) -> None:
+        '''
+        base_path 必须存在
+        '''
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        if (name_legal(name) == False):  # 虽然可以提前进行，但是逻辑上应该先检查其它的
+            self.__unlock()
+            assert (False), "Dir name is not legal."
+        path = path_elements(base_path)  # base_path 的
+        path_str = resolve_path(path)  # base_path 的
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+            current_dir_str += p + '/'
+        if (name in current_dir):
+            self.__unlock()
+            assert (False), f'Path "{path_str}/{name}" already exists.'
+        current_dir[name] = {}
+        self.__unlock()
+
+    def size(self, path: str) -> int:
+        '''
+        文件或文件夹的总大小
+        '''
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+        if (path[-1] not in current_dir):
+            self.__unlock()
+            current_dir_str += path[-1]
+            assert (False), f'Path "{current_dir_str}" does not exist.'
+        if (type(current_dir[path[-1]]) == _STR_TYPE):
+            file_info = str(current_dir[path[-1]]).split(',')
+            self.__unlock()
+            return (int(file_info[1]) - int(file_info[0]))
+        s = _size(current_dir[path[-1]])
+        self.__unlock()
+        return s
+
+    def file_info(self, path: str) -> list:
+        # 目前只有大小
+        return [self.size(path)]
+    
+    def dir_info(self, path: str) -> list:
+        # 目前有一些问题，前面的线程锁释放了之后，有可能被其它线程抢占
+        return [self.size(path),self.file_num(path),self.file_dir_num(path)]
+
+    def file_num(self, path: str) -> int:
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+        if (path[-1] not in current_dir):
+            self.__unlock()
+            current_dir_str += path[-1]
+            assert (False), f'Path "{current_dir_str}" does not exist.'
+        if (type(current_dir[path[-1]]) == _STR_TYPE):
+            self.__unlock()
+            current_dir_str += path[-1]
+            assert (False), f'Path "{current_dir_str}" is a file.'
+        s = _file_num(current_dir[path[-1]])
+        self.__unlock()
+        return s
+
+    def file_dir_num(self, path: str) -> int:
+        # 包括自己
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+        if (path[-1] not in current_dir):
+            self.__unlock()
+            current_dir_str += path[-1]
+            assert (False), f'Path "{current_dir_str}" does not exist.'
+        if (type(current_dir[path[-1]]) == _STR_TYPE):
+            self.__unlock()
+            current_dir_str += path[-1]
+            assert (False), f'Path "{current_dir_str}" is a file.'
+        s = _file_dir_num(current_dir[path[-1]])
+        self.__unlock()
+        return s
+
+    def list(self, path: str) -> list[str]:
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+        result = []
+        for k, v in current_dir.items():
+            if (type(v) == _STR_TYPE):
+                result.append(k + '')
+            else:
+                result.append(k + '/')
+        self.__unlock()
+        return result
+
+    def list_all(self, path) -> dict[str, List[int]]:
+        '''
+        文件: [大小]
+        文件夹: [大小, 文件数, 文件和文件夹总数]
+        '''
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+        result = {}
+        for k, v in current_dir.items():
+            if (type(v) == _STR_TYPE):
+                parts = str(v).split(',')
+                result[k + ''] = [int(parts[1]) - int(parts[0])]
+            else:
+                result[k + '/'] = [_size(v), _file_num(v), _file_dir_num(v)]
+        self.__unlock()
+        return result
+
+    def rename(self, path: str, new_name: str) -> None:
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        if (name_legal(new_name) == False):  # 虽然可以提前进行，但是逻辑上应该先检查其它的
+            self.__unlock()
+            assert (False), "Dir name is not legal."
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+        if (path[-1] not in current_dir):
+            self.__unlock()
+            current_dir_str += path[-1]
+            assert (False), f'Path "{current_dir_str}" does not exist.'
+        if (new_name in current_dir):
+            self.__unlock()
+            assert (False), f'Path "{current_dir_str}/{new_name}" already exists.'
+        current_dir[new_name] = current_dir[path[-1]]
+        del current_dir[path[-1]]
+        self.__unlock()
+
+    def remove(self, path: str) -> None:
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        path = path_elements(path)
+        current_dir = self.__json['files']
+        current_dir_str = '/'
+        for p in path[:-1]:
+            if (p not in current_dir):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" does not exist.'
+            elif (type(current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                current_dir_str += p
+                assert (False), f'Path "{current_dir_str}" is a file.'
+            current_dir = current_dir[p]
+        if (path[-1] not in current_dir):
+            self.__unlock()
+            current_dir_str += path[-1]
+            assert (False), f'Path "{current_dir_str}" does not exist.'
+        del current_dir[path[-1]]
+        self.__unlock()
+
+    def copy_to(self, src: str, dest: str) -> None:
+        '''
+        /a/b/c/d/e -> /g/h/i/j
+        要求 /a/b/c/d/e 存在, /g/h/i/j 存在且为文件夹, /g/h/i/j/e 不存在
+        '''
+        pass
+
+    def copy_as(self, src: str, dest: str) -> None:
+        '''
+        /a/b/c/d/e -> /g/h/i/j
+        要求 /a/b/c/d/e 存在, /g/h/i 存在且为文件夹, /g/h/i/j 不存在
+        '''
+        pass
+
+    def move_to(self, src: str, dest: str) -> None:
+        '''
+        /a/b/c/d/e -> /g/h/i/j
+        要求 /a/b/c/d/e 存在, /g/h/i/j 存在且为文件夹, /g/h/i/j/e 不存在
+        '''
+        pass
+
+    def move_as(self, src: str, dest: str) -> None:
+        '''
+        /a/b/c/d/e -> /g/h/i/j
+        要求 /a/b/c/d/e 存在, /g/h/i 存在且为文件夹, /g/h/i/j 不存在
+        '''
+        pass
 
     @property
     def name(self) -> str:
