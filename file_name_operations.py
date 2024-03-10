@@ -52,3 +52,15 @@ def path_elements(path: str) -> list[str]:
         elemnets.append(pe)
     return elemnets
 
+
+def src_in_dest(src: str, dest: str) -> bool:
+    src = remove_continuous_slashes(src)
+    dest = remove_continuous_slashes(dest)
+    src_elements = path_elements(src)
+    dest_elements = path_elements(dest)
+    if len(src_elements) > len(dest_elements):
+        return False
+    for i in range(len(src_elements)):
+        if src_elements[i] != dest_elements[i]:
+            return False
+    return True

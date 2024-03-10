@@ -10,13 +10,20 @@ import json
 import secrets
 from time import time, sleep
 import threading
+from copy import deepcopy
 try:
-    from file_name_operations import remove_continuous_slashes, name_legal, resolve_path, path_elements
+    from file_name_operations import remove_continuous_slashes, name_legal, resolve_path, path_elements, src_in_dest
+    from block import gen_tar_gz, _BLOCK_SIZE, upload_tar_gz
+    from uploader import Uploader
 except:
-    from .file_name_operations import remove_continuous_slashes, name_legal, resolve_path, path_elements
+    from .file_name_operations import remove_continuous_slashes, name_legal, resolve_path, path_elements, src_in_dest
+    from .block import gen_tar_gz, _BLOCK_SIZE, upload_tar_gz
+    from .uploader import Uploader
 
 _STR_TYPE = type('')
 _DICT_TYPE = type({})
+_BLOCK_CREATED = 1000001
+_BLOCK_GENERATED = 1000002
 
 
 def _hash_sha256(data, upper: bool = False) -> str:
@@ -88,6 +95,7 @@ class PypiNetdisk:
         self.__lock = threading.Lock()
         self.__locked = False
         self.__valid = False
+        self.thread_num = 0
 
     def __require_unlocked(self) -> None:
         with self.__lock:
@@ -248,6 +256,7 @@ class PypiNetdisk:
                 current_dir_str += p
                 assert (False), f'Path "{current_dir_str}" is a file.'
             current_dir = current_dir[p]
+            current_dir_str += p + '/'
         if (path[-1] not in current_dir):
             self.__unlock()
             current_dir_str += path[-1]
@@ -284,6 +293,7 @@ class PypiNetdisk:
                 current_dir_str += p
                 assert (False), f'Path "{current_dir_str}" is a file.'
             current_dir = current_dir[p]
+            current_dir_str += p + '/'
         if (path[-1] not in current_dir):
             self.__unlock()
             current_dir_str += path[-1]
@@ -313,6 +323,7 @@ class PypiNetdisk:
                 current_dir_str += p
                 assert (False), f'Path "{current_dir_str}" is a file.'
             current_dir = current_dir[p]
+            current_dir_str += p + '/'
         if (path[-1] not in current_dir):
             self.__unlock()
             current_dir_str += path[-1]
@@ -341,6 +352,7 @@ class PypiNetdisk:
                 current_dir_str += p
                 assert (False), f'Path "{current_dir_str}" is a file.'
             current_dir = current_dir[p]
+            current_dir_str += p + '/'
         result = []
         for k, v in current_dir.items():
             if (type(v) == _STR_TYPE):
@@ -370,6 +382,7 @@ class PypiNetdisk:
                 current_dir_str += p
                 assert (False), f'Path "{current_dir_str}" is a file.'
             current_dir = current_dir[p]
+            current_dir_str += p + '/'
         result = {}
         for k, v in current_dir.items():
             if (type(v) == _STR_TYPE):
@@ -386,7 +399,7 @@ class PypiNetdisk:
         path = path_elements(path)
         if (name_legal(new_name) == False):  # 虽然可以提前进行，但是逻辑上应该先检查其它的
             self.__unlock()
-            assert (False), "Dir name is not legal."
+            assert (False), "New name is not legal."
         current_dir = self.__json['files']
         current_dir_str = '/'
         for p in path[:-1]:
@@ -399,6 +412,7 @@ class PypiNetdisk:
                 current_dir_str += p
                 assert (False), f'Path "{current_dir_str}" is a file.'
             current_dir = current_dir[p]
+            current_dir_str += p + '/'
         if (path[-1] not in current_dir):
             self.__unlock()
             current_dir_str += path[-1]
@@ -426,6 +440,7 @@ class PypiNetdisk:
                 current_dir_str += p
                 assert (False), f'Path "{current_dir_str}" is a file.'
             current_dir = current_dir[p]
+            current_dir_str += p + '/'
         if (path[-1] not in current_dir):
             self.__unlock()
             current_dir_str += path[-1]
@@ -438,35 +453,201 @@ class PypiNetdisk:
         /a/b/c/d/e -> /g/h/i/j
         要求 /a/b/c/d/e 存在, /g/h/i/j 存在且为文件夹, /g/h/i/j/e 不存在
         '''
-        pass
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        if (src_in_dest(src, dest)):
+            self.__unlock()
+            assert (False), "Dest is contained in src."
+        src = path_elements(src)
+        dest = path_elements(dest)
+        src_current_dir = self.__json['files']
+        dest_current_dir = self.__json['files']
+        src_current_dir_str = '/'
+        dest_current_dir_str = '/'
+        for p in src[:-1]:
+            if (p not in src_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" does not exist.'
+            elif (type(src_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" is a file.'
+            src_current_dir = src_current_dir[p]
+            src_current_dir_str += p + '/'
+        if (src[-1] not in src_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{src_current_dir_str}/{src[-1]}" does not exist.'
+        for p in dest:
+            if (p not in dest_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" does not exist.'
+            elif (type(dest_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" is a file.'
+            dest_current_dir = dest_current_dir[p]
+            dest_current_dir_str += p + '/'
+        if (src[-1] in dest_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{dest_current_dir_str}/{src[-1]}" already exists.'
+        dest_current_dir[src[-1]] = deepcopy(src_current_dir[src[-1]])
+        self.__unlock()
 
     def copy_as(self, src: str, dest: str) -> None:
         '''
         /a/b/c/d/e -> /g/h/i/j
         要求 /a/b/c/d/e 存在, /g/h/i 存在且为文件夹, /g/h/i/j 不存在
         '''
-        pass
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        if (src_in_dest(src, dest)):
+            self.__unlock()
+            assert (False), "Dest is contained in src."
+        dest_path_str = resolve_path(dest)
+        if (dest_path_str == '/'):
+            self.__unlock()
+            assert (False), f"Path '{dest_path_str}' already exists."
+        dest_path_elements = path_elements(dest)
+        if (name_legal(dest_path_elements[-1]) == False):
+            self.__unlock()
+            assert (False), "Target name is not legal."
+        src = path_elements(src)
+        dest = path_elements(dest)
+        src_current_dir = self.__json['files']
+        dest_current_dir = self.__json['files']
+        src_current_dir_str = '/'
+        dest_current_dir_str = '/'
+        for p in src[:-1]:
+            if (p not in src_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" does not exist.'
+            elif (type(src_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" is a file.'
+            src_current_dir = src_current_dir[p]
+            src_current_dir_str += p + '/'
+        if (src[-1] not in src_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{src_current_dir_str}/{src[-1]}" does not exist.'
+        for p in dest[:-1]:
+            if (p not in dest_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" does not exist.'
+            elif (type(dest_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" is a file.'
+            dest_current_dir = dest_current_dir[p]
+            dest_current_dir_str += p + '/'
+        if (dest[-1] in dest_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{dest_current_dir_str}/{dest[-1]}" already exists.'
+        dest_current_dir[dest[-1]] = deepcopy(src_current_dir[src[-1]])
+        self.__unlock()
 
     def move_to(self, src: str, dest: str) -> None:
         '''
         /a/b/c/d/e -> /g/h/i/j
         要求 /a/b/c/d/e 存在, /g/h/i/j 存在且为文件夹, /g/h/i/j/e 不存在
         '''
-        pass
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        if (src_in_dest(src, dest)):
+            self.__unlock()
+            assert (False), "Dest is contained in src."
+        src = path_elements(src)
+        dest = path_elements(dest)
+        src_current_dir = self.__json['files']
+        dest_current_dir = self.__json['files']
+        src_current_dir_str = '/'
+        dest_current_dir_str = '/'
+        for p in src[:-1]:
+            if (p not in src_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" does not exist.'
+            elif (type(src_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" is a file.'
+            src_current_dir = src_current_dir[p]
+            src_current_dir_str += p + '/'
+        if (src[-1] not in src_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{src_current_dir_str}/{src[-1]}" does not exist.'
+        for p in dest:
+            if (p not in dest_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" does not exist.'
+            elif (type(dest_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" is a file.'
+            dest_current_dir = dest_current_dir[p]
+            dest_current_dir_str += p + '/'
+        if (src[-1] in dest_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{dest_current_dir_str}/{src[-1]}" already exists.'
+        dest_current_dir[src[-1]] = deepcopy(src_current_dir[src[-1]])  # 应该可以不用 deepcopy
+        del src_current_dir[src[-1]]
+        self.__unlock()
 
     def move_as(self, src: str, dest: str) -> None:
         '''
         /a/b/c/d/e -> /g/h/i/j
         要求 /a/b/c/d/e 存在, /g/h/i 存在且为文件夹, /g/h/i/j 不存在
         '''
-        pass
+        self.__require_unlocked()
+        assert (self.__valid), "Operation on a closed netdisk is not allowed."
+        if (src_in_dest(src, dest)):
+            self.__unlock()
+            assert (False), "Dest is contained in src."
+        dest_path_str = resolve_path(dest)
+        if (dest_path_str == '/'):
+            self.__unlock()
+            assert (False), f"Path '{dest_path_str}' already exists."
+        dest_path_elements = path_elements(dest)
+        if (name_legal(dest_path_elements[-1]) == False):
+            self.__unlock()
+            assert (False), "Target name is not legal."
+        src = path_elements(src)
+        dest = path_elements(dest)
+        src_current_dir = self.__json['files']
+        dest_current_dir = self.__json['files']
+        src_current_dir_str = '/'
+        dest_current_dir_str = '/'
+        for p in src[:-1]:
+            if (p not in src_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" does not exist.'
+            elif (type(src_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{src_current_dir_str}" is a file.'
+            src_current_dir = src_current_dir[p]
+            src_current_dir_str += p + '/'
+        if (src[-1] not in src_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{src_current_dir_str}/{src[-1]}" does not exist.'
+        for p in dest[:-1]:
+            if (p not in dest_current_dir):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" does not exist.'
+            elif (type(dest_current_dir[p]) == _STR_TYPE):
+                self.__unlock()
+                assert (False), f'Path "{dest_current_dir_str}" is a file.'
+            dest_current_dir = dest_current_dir[p]
+            dest_current_dir_str += p + '/'
+        if (dest[-1] in dest_current_dir):
+            self.__unlock()
+            assert (False), f'Path "{dest_current_dir_str}/{dest[-1]}" already exists.'
+        dest_current_dir[dest[-1]] = deepcopy(src_current_dir[src[-1]])  # 应该可以不用 deepcopy
+        del src_current_dir[src[-1]]
+        self.__unlock()
 
     def upload_from_disk_to(self, local_path: str, netdisk_path: str):
         # 不会提供 upload_from_disk_as 函数
         pass
 
     def upload_bytes(self, data: bytes, path: str):
-        pass
+        length = len(data)
+        max_index = self.__json['bocks']['max_index']
+        max_block_id = self.__json['bocks']['max_block_id']
+        block_num = (length + _BLOCK_SIZE - 1) // _BLOCK_SIZE
+        uploader = Uploader(thread_num=self.thread_num)
 
     def upload_tar_bytes(self, tar: bytes, path: str):
         pass
@@ -543,7 +724,7 @@ class PypiNetdisk:
         self.__unlock()
 
 
-def Create(name: str, passwd: str, pypi_token: str) -> PypiNetdisk:
+def Create(name: str, passwd: str, pypi_token: str, thread_num: int = 5) -> PypiNetdisk:
     netdisk = PypiNetdisk()
     netdisk._PypiNetdisk__name = name
     netdisk._PypiNetdisk__passwd = passwd
@@ -556,20 +737,24 @@ def Create(name: str, passwd: str, pypi_token: str) -> PypiNetdisk:
     netdisk._PypiNetdisk__valid = True
     netdisk._PypiNetdisk__json = {
         "files": {},
-        "blocks": {},
+        "blocks": {
+            "max_index": 0,  # 实际结束位置的下一个
+            "max_block_id": 0  # 实际值 + 1
+        },
         "packages": {}
     }
+    netdisk.thread_num = thread_num
     return netdisk
 
 
-def Open(path: str, passwd: str) -> PypiNetdisk:
+def Open(path: str, passwd: str, thread_num: int = 5) -> PypiNetdisk:
     f = open(path, 'rb')
     data = f.read()
     f.close()
     return Open_bytes(data, passwd)
 
 
-def Open_bytes(data: bytes, passwd: str) -> PypiNetdisk:
+def Open_bytes(data: bytes, passwd: str, thread_num: int = 5) -> PypiNetdisk:
     parts = data.split(b'\n')
     nonce = int(parts[0].decode('utf-8'))
     encrypted_hash = parts[1].decode('utf-8')
@@ -589,4 +774,5 @@ def Open_bytes(data: bytes, passwd: str) -> PypiNetdisk:
     netdisk._PypiNetdisk__nonce = nonce
     netdisk._PypiNetdisk__json = json_data['data']
     netdisk._PypiNetdisk__valid = True
+    netdisk.thread_num = thread_num
     return netdisk

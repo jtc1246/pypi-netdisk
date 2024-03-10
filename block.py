@@ -26,6 +26,9 @@ except:
     from .data import _hash_sha256
 
 
+_BLOCK_SIZE = 95000000
+
+
 def _to_4_digits(num: int) -> str:
     num = str(num)
     return "0" * (4 - len(num)) + num
